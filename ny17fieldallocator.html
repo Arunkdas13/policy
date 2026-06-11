@@ -1,1 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NY-17 Primary Field Allocator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFBFC; --card:#FFFFFF; --ink:#0F1B2D; --ink2:#5A6B7B; --ink3:#8A97A5;
+    --line:#E4E9EF; --line2:#EEF2F6;
+    --bank:#1F6FEB; --bankbg:#EAF2FE;
+    --persuade:#C77A0A; --persuadebg:#FBF1E2;
+    --hold:#8A97A5; --holdbg:#F1F4F7;
+    --good:#157A4A;
+    --shadow:0 1px 2px rgba(15,27,45,.04),0 4px 16px rgba(15,27,45,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;line-height:1.5}
+  .mono{font-family:'Roboto Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 
+  /* ---- top bar ---- */
+  header{position:sticky;top:0;z-index:50;background:rgba(250,251,252,.85);
+    backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+  .bar{max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:14px}
+  .logo{display:flex;flex-direction:column;line-height:1.1}
+  .logo .k{font-weight:800;letter-spacing:-.02em;font-size:16px}
+  .logo .s{font-size:11px;color:var(--ink2);font-weight:500}
+  .spacer{flex:1}
+  .tag{font-size:11px;font-weight:600;color:var(--bank);background:var(--bankbg);
+    padding:5px 10px;border-radius:99px;white-space:nowrap}
+  nav{max-width:1100px;margin:0 auto;padding:0 22px;display:flex;gap:2px;overflow-x:auto}
+  nav button{font-family:inherit;font-size:13px;font-weight:600;color:var(--ink2);
+    background:none;border:none;padding:11px 14px;cursor:pointer;border-bottom:2px solid transparent;
+    white-space:nowrap;transition:color .15s}
+  nav button:hover{color:var(--ink)}
+  nav button.active{color:var(--ink);border-bottom-color:var(--bank)}
+
+  main{max-width:1100px;margin:0 auto;padding:28px 22px 80px}
+  .panel{display:none}
+  .panel.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  h2{font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:5px}
+  .sub{color:var(--ink2);font-size:14px;margin-bottom:22px;max-width:70ch}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink3);margin-bottom:9px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px;box-shadow:var(--shadow)}
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:1.4fr 1fr}
+  @media(max-width:820px){.g4{grid-template-columns:repeat(2,1fr)}.g3,.g2{grid-template-columns:1fr}}
+
+  .stat .n{font-family:'Roboto Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-.02em}
+  .stat .l{font-size:12px;color:var(--ink2);margin-top:3px}
+  .stat .d{font-size:11px;color:var(--ink3);margin-top:7px;line-height:1.4}
+
+  /* county bars */
+  .countyrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line2)}
+  .countyrow:last-child{border-bottom:none}
+  .cname{width:96px;font-weight:600;font-size:13px;flex-shrink:0}
+  .ctrack{flex:1;height:22px;background:var(--line2);border-radius:6px;overflow:hidden;position:relative}
+  .cfill{height:100%;border-radius:6px;display:flex;align-items:center;padding-left:8px;
+    color:#fff;font-size:11px;font-weight:600}
+  .cshare{width:52px;text-align:right;font-family:'Roboto Mono',monospace;font-weight:500;font-size:13px;flex-shrink:0}
+
+  /* play legend */
+  .plays{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+  .chip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:99px;display:inline-flex;align-items:center;gap:6px}
+  .chip .dot{width:8px;height:8px;border-radius:99px}
+  .chip.bank{background:var(--bankbg);color:var(--bank)} .chip.bank .dot{background:var(--bank)}
+  .chip.persuade{background:var(--persuadebg);color:var(--persuade)} .chip.persuade .dot{background:var(--persuade)}
+  .chip.hold{background:var(--holdbg);color:var(--ink2)} .chip.hold .dot{background:var(--hold)}
+
+  /* table */
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--ink3);padding:9px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  .tbl th.num,.tbl td.num{text-align:right;font-family:'Roboto Mono',monospace}
+  .tbl th:hover{color:var(--ink)}
+  .tbl td{padding:11px 10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  .tbl tr:hover td{background:#FBFCFE}
+  .muni{font-weight:600}
+  .cty{font-size:11px;color:var(--ink3);margin-top:1px}
+  .badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;display:inline-block}
+  .badge.bank{background:var(--bankbg);color:var(--bank)}
+  .badge.persuade{background:var(--persuadebg);color:var(--persuade)}
+  .badge.hold{background:var(--holdbg);color:var(--ink2)}
+  .scorebar{display:inline-flex;align-items:center;gap:8px;width:100%}
+  .scoretrack{flex:1;height:6px;background:var(--line2);border-radius:99px;overflow:hidden;min-width:40px}
+  .scorefill{height:100%;border-radius:99px}
+  .home{font-size:10px;font-weight:700;color:var(--good);background:#E6F4EC;padding:1px 6px;border-radius:5px;margin-left:6px;white-space:nowrap}
+
+  /* allocator controls */
+  .control{margin-bottom:18px}
+  .control label{display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:8px}
+  .control label span.v{font-family:'Roboto Mono',monospace;color:var(--bank)}
+  input[type=range]{-webkit-appearance:none;width:100%;height:6px;border-radius:99px;
+    background:var(--line);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:99px;
+    background:var(--bank);cursor:pointer;box-shadow:0 1px 4px rgba(31,111,235,.4);border:2px solid #fff}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:99px;background:var(--bank);
+    cursor:pointer;border:2px solid #fff}
+  .out{background:var(--ink);color:#fff;border-radius:14px;padding:20px}
+  .out .big{font-family:'Roboto Mono',monospace;font-size:34px;font-weight:600;letter-spacing:-.02em;color:#fff}
+  .out .biglabel{font-size:12px;color:#A7B6C7;margin-top:2px}
+  .out .ctx{font-size:12px;color:#C3D0DD;margin-top:14px;line-height:1.5;border-top:1px solid #28384C;padding-top:12px}
+  .splitline{display:flex;gap:18px;margin-top:14px}
+  .splitline .s{flex:1}
+  .splitline .s .sn{font-family:'Roboto Mono',monospace;font-size:18px;font-weight:600;color:#fff}
+  .splitline .s .sl{font-size:11px;color:#A7B6C7;margin-top:1px}
+
+  .note{font-size:12px;color:var(--ink2);background:#F6F8FA;border:1px solid var(--line);
+    border-radius:10px;padding:13px 15px;line-height:1.55}
+  .note b{color:var(--ink)}
+  .qlist{list-style:none}
+  .qlist li{padding:13px 0;border-bottom:1px solid var(--line2);font-size:14px}
+  .qlist li:last-child{border-bottom:none}
+  .qlist .qn{font-family:'Roboto Mono',monospace;color:var(--bank);font-weight:600;margin-right:10px}
+  .real{font-size:10px;font-weight:700;color:var(--good);text-transform:uppercase;letter-spacing:.05em}
+  .modeled{font-size:10px;font-weight:700;color:var(--persuade);text-transform:uppercase;letter-spacing:.05em}
+  .src{font-size:12px;color:var(--ink2);line-height:1.6}
+  .src b{color:var(--ink)}
+  footer{max-width:1100px;margin:0 auto;padding:0 22px 50px;color:var(--ink3);font-size:11px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">
+      <span class="k">NY-17 Field Allocator</span>
+      <span class="s">Primary targeting · 5 Dems · June 23</span>
+    </div>
+    <div class="spacer"></div>
+    <span class="tag" id="countdown">— days to primary</span>
+  </div>
+  <nav>
+    <button class="active" data-tab="map">The District</button>
+    <button data-tab="board">Priority Board</button>
+    <button data-tab="alloc">Shift Allocator</button>
+    <button data-tab="method">How it works</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============ THE DISTRICT ============ -->
+  <section class="panel active" id="map">
+    <h2>The district, as a turnout problem</h2>
+    <p class="sub">A June primary is a low-turnout, high-leverage electorate. Where the votes actually live, and where field contact moves them, is not where the population lives. This is the structural map every shift decision starts from.</p>
+
+    <div class="grid g4" style="margin-bottom:18px">
+      <div class="card stat"><div class="n">4</div><div class="l">counties in NY-17</div><div class="d">Westchester, Rockland, Putnam, Dutchess</div></div>
+      <div class="card stat"><div class="n">~40%</div><div class="l">of the Dem primary electorate is Rockland</div><div class="d">Davidson's home base — the single biggest bloc</div></div>
+      <div class="card stat"><div class="n">5</div><div class="l">Democrats on the ballot</div><div class="d">Davidson, Conley, Phillips-Staley, Cappello, +1</div></div>
+      <div class="card stat"><div class="n">Toss-up</div><div class="l">general-election rating</div><div class="d">Cook & Inside Elections — only Harris-won GOP seat</div></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="eyebrow">2024 general result by county <span class="real">real</span></div>
+        <div id="countyChart"></div>
+        <p style="font-size:11px;color:var(--ink3);margin-top:12px">Two-party share, Jones (D) vs Lawler (R), 2024. Rockland & Putnam went red; Westchester carried the Democrat. The primary electorate is a different, smaller animal — see Priority Board.</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow">The strategic read</div>
+        <p style="font-size:13.5px;line-height:1.65;color:var(--ink)">
+          Davidson's edge is <b>Rockland</b>, where the county party is behind her and she's the local name. The job there isn't persuasion — it's <b>turnout</b>. Bank every favorable vote.<br><br>
+          <b>Westchester</b> is the largest, bluest county and the most contested — the county party stayed neutral. This is where doors change minds, not just turn them out. It's the <b>battleground</b>.<br><br>
+          <b>Putnam & Dutchess</b> are smaller and tougher, but hold real high-turnout pockets (Philipstown, Beacon) worth a targeted visit — not a blanket one.
+        </p>
+        <div class="plays">
+          <span class="chip bank"><span class="dot"></span>Bank — turn out the base</span>
+          <span class="chip persuade"><span class="dot"></span>Persuade — move the middle</span>
+          <span class="chip hold"><span class="dot"></span>Hold — low yield</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRIORITY BOARD ============ -->
+  <section class="panel" id="board">
+    <h2>Priority Board</h2>
+    <p class="sub">Every municipality scored on one question: where does an hour of canvassing buy the most Davidson votes? Score blends the size of the expected primary electorate with how movable it is. Click any column to re-sort.</p>
+
+    <div class="plays" style="margin-bottom:16px">
+      <span class="chip bank"><span class="dot"></span>Bank</span>
+      <span class="chip persuade"><span class="dot"></span>Persuade</span>
+      <span class="chip hold"><span class="dot"></span>Hold</span>
+      <span style="font-size:12px;color:var(--ink3);align-self:center">Municipality figures are <span class="modeled">modeled</span> — replace with BOE enrollment + VAN vote history (see How it works)</span>
+    </div>
+
+    <div class="card" style="padding:6px 6px 2px;overflow-x:auto">
+      <table class="tbl" id="boardTbl">
+        <thead>
+          <tr>
+            <th data-k="name">Municipality</th>
+            <th data-k="play">Play</th>
+            <th data-k="prize" class="num">Est. primary voters</th>
+            <th data-k="lean" class="num">Davidson lean</th>
+            <th data-k="score" class="num" style="width:170px">Field priority ▾</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ ALLOCATOR ============ -->
+  <section class="panel" id="alloc">
+    <h2>Shift Allocator</h2>
+    <p class="sub">You have a finite number of canvass shifts before June 23. This distributes them across the district by priority and projects the marginal Davidson votes they buy. Move the sliders to match what the campaign actually has.</p>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="eyebrow">Your field capacity</div>
+        <div class="control">
+          <label>Canvass shifts available <span class="v" id="shiftsV">160</span></label>
+          <input type="range" id="shifts" min="20" max="600" value="160" step="10">
+        </div>
+        <div class="control">
+          <label>Voters reached per shift <span class="v" id="reachV">18</span></label>
+          <input type="range" id="reach" min="8" max="40" value="18" step="1">
+        </div>
+        <div class="control">
+          <label>Days of canvassing left <span class="v" id="daysV">13</span></label>
+          <input type="range" id="days" min="1" max="21" value="13" step="1">
+        </div>
+        <div class="note" style="margin-top:6px">
+          <b>Strategy mix.</b> Slide toward base to lock Rockland turnout; slide toward battleground to chase persuadable Westchester votes.
+        </div>
+        <div class="control" style="margin-top:16px">
+          <label>Base ◄────► Battleground <span class="v" id="mixV">balanced</span></label>
+          <input type="range" id="mix" min="0" max="100" value="50" step="5">
+        </div>
+      </div>
+
+      <div class="out">
+        <div class="eyebrow" style="color:#8AA0B8">Projected outcome</div>
+        <div class="big" id="netVotes">+0</div>
+        <div class="biglabel">net Davidson votes from this plan (modeled)</div>
+        <div class="splitline">
+          <div class="s"><div class="sn" id="contacts">0</div><div class="sl">voter contacts</div></div>
+          <div class="s"><div class="sn" id="shiftsDay">0</div><div class="sl">shifts / day</div></div>
+          <div class="s"><div class="sn" id="topCty">—</div><div class="sl">top county</div></div>
+        </div>
+        <div class="ctx" id="ctxNote">Latest public poll had Davidson ~7 pts behind Conley in a low-turnout primary — a margin a disciplined field program can close. Adjust the sliders to see how much ground a given plan covers.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px;padding:6px 6px 2px;overflow-x:auto">
+      <table class="tbl" id="allocTbl">
+        <thead>
+          <tr>
+            <th>Send shifts to</th>
+            <th>Play</th>
+            <th class="num">Shifts</th>
+            <th class="num">Contacts</th>
+            <th class="num">Proj. net votes</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ METHOD ============ -->
+  <section class="panel" id="method">
+    <h2>How it works — and what makes it sharp</h2>
+    <p class="sub">This runs on public structural data today. The moment it's pointed at the campaign's own voter file, the municipality scores become precinct-level and the projections become real targets.</p>
+
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="card">
+        <div class="eyebrow">Data in the engine now</div>
+        <p class="src">
+          <b><span class="real">Real</span> — county vote shares & electorate weights:</b> 2024 NY-17 certified results by county; Rockland ≈ 40% of the Dem primary electorate.<br><br>
+          <b><span class="real">Real</span> — race structure:</b> 5-way June 23 Dem primary, Cook/Inside Elections toss-up rating, latest public polling margin.<br><br>
+          <b><span class="modeled">Modeled</span> — municipality registrants, primary-turnout propensity, Davidson lean:</b> illustrative placeholders, structured to match known county-level patterns.
+        </p>
+      </div>
+      <div class="card">
+        <div class="eyebrow">What it becomes with the voter file</div>
+        <p class="src">
+          <b>Swap the modeled layer for:</b> NY State BOE enrollment by election district, VAN/PDI vote history (who actually votes in June primaries), and the campaign's own ID/canvass results.<br><br>
+          Municipality rows become <b>election-district rows</b>. "Davidson lean" becomes <b>real support ID</b>. "Projected votes" becomes a <b>turf cut</b> a field director can print and walk. Same engine, live targets.
+        </p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="eyebrow">The priority score, in plain terms</div>
+      <p class="src" style="max-width:none">
+        For each place: <b>expected primary voters</b> = registered Dems × primary-turnout propensity (low-turnout June electorate, not the November universe). That prize is then weighted by how much a door knock moves it —
+        highest where the race is <b>close to 50/50</b> (persuasion), solid where there's a <b>favorable base to turn out</b> (GOTV), and discounted where the lean is unwinnable.
+        Bank / Persuade / Hold falls out of that weighting. No black box — every number on the Priority Board is one multiplication you can defend to a county chair.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Open questions for the field team</div>
+      <ul class="qlist">
+        <li><span class="qn">01</span>What's the real primary-turnout propensity by ED from the last comparable June primary? That's the one input that most changes the board.</li>
+        <li><span class="qn">02</span>Where is current support ID strongest vs. softest — does the modeled Rockland-base / Westchester-battleground split hold against your canvass data?</li>
+        <li><span class="qn">03</span>What's the actual shift capacity per day in the final stretch, and the realistic contacts-per-shift? That sets the ceiling on everything here.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Built as a working demo of a field-targeting engine for NY-17. County results and electorate weights are real; municipality-level figures are modeled placeholders meant to be replaced by the campaign's voter file. Not affiliated with or authorized by any campaign.
+</footer>
+
+<script>
+/* ---------- data ---------- */
+// 2024 certified, two-party share (Jones D vs Lawler R), county weight = est. share of Dem primary electorate
+const counties = [
+  {name:"Rockland",     dem:40.4, rep:58.1, weight:40},
+  {name:"Westchester",  dem:54.9, rep:43.0, weight:34},
+  {name:"Putnam",       dem:39.1, rep:58.3, weight:16},
+  {name:"Dutchess",     dem:35.8, rep:61.5, weight:10}
+];
+
+// municipality layer — MODELED placeholders (regDems in thousands)
+const munis = [
+  {name:"Clarkstown",            cty:"Rockland",    regDems:24.0, turnout:.16, lean:.61},
+  {name:"Orangetown (Nyack)",    cty:"Rockland",    regDems:16.5, turnout:.20, lean:.68, home:true},
+  {name:"Ramapo",                cty:"Rockland",    regDems:28.0, turnout:.12, lean:.55},
+  {name:"Haverstraw",            cty:"Rockland",    regDems:11.0, turnout:.13, lean:.57},
+  {name:"Stony Point",           cty:"Rockland",    regDems:4.5,  turnout:.14, lean:.54},
+  {name:"Greenburgh",            cty:"Westchester", regDems:26.0, turnout:.18, lean:.42},
+  {name:"Ossining",              cty:"Westchester", regDems:13.0, turnout:.17, lean:.44},
+  {name:"Cortlandt",             cty:"Westchester", regDems:12.5, turnout:.16, lean:.43},
+  {name:"Yorktown",              cty:"Westchester", regDems:11.0, turnout:.15, lean:.40},
+  {name:"Peekskill",             cty:"Westchester", regDems:9.0,  turnout:.15, lean:.46},
+  {name:"Mount Pleasant",        cty:"Westchester", regDems:7.5,  turnout:.16, lean:.41},
+  {name:"Sleepy Hollow/Tarrytown",cty:"Westchester",regDems:7.0,  turnout:.19, lean:.48},
+  {name:"New Castle (Chappaqua)",cty:"Westchester", regDems:6.5,  turnout:.22, lean:.46},
+  {name:"Bedford",               cty:"Westchester", regDems:5.0,  turnout:.19, lean:.47},
+  {name:"Mount Kisco",           cty:"Westchester", regDems:4.0,  turnout:.18, lean:.46},
+  {name:"North Castle (Armonk)", cty:"Westchester", regDems:3.6,  turnout:.20, lean:.45},
+  {name:"Pleasantville",         cty:"Westchester", regDems:3.5,  turnout:.20, lean:.45},
+  {name:"Lewisboro",             cty:"Westchester", regDems:3.2,  turnout:.18, lean:.45},
+  {name:"North Salem",           cty:"Westchester", regDems:1.8,  turnout:.17, lean:.43},
+  {name:"Carmel",                cty:"Putnam",      regDems:7.0,  turnout:.11, lean:.34},
+  {name:"Philipstown (Cold Spring)",cty:"Putnam",   regDems:3.8,  turnout:.21, lean:.52},
+  {name:"Putnam Valley",         cty:"Putnam",      regDems:3.2,  turnout:.12, lean:.37},
+  {name:"Kent",                  cty:"Putnam",      regDems:3.0,  turnout:.10, lean:.33},
+  {name:"Southeast (Brewster)",  cty:"Putnam",      regDems:3.0,  turnout:.11, lean:.35},
+  {name:"Beacon",                cty:"Dutchess",    regDems:6.0,  turnout:.17, lean:.49},
+  {name:"East Fishkill (part)",  cty:"Dutchess",    regDems:2.5,  turnout:.12, lean:.36}
+];
+
+/* ---------- scoring ---------- */
+function prizeOf(m){ return Math.round(m.regDems*1000*m.turnout); }
+function playOf(m){ return m.lean>=.52 ? "bank" : (m.lean>=.42 ? "persuade" : "hold"); }
+function multOf(m){
+  const p=playOf(m);
+  if(p==="bank")     return m.lean;                       // reliable turnout value scales w/ lean
+  if(p==="persuade") return (1-Math.abs(m.lean-.5))*1.25; // max impact near 50/50, persuasion boost
+  return m.lean*0.4;                                      // unfavorable = discounted
+}
+munis.forEach(m=>{ m.prize=prizeOf(m); m.play=playOf(m); m.value=m.prize*multOf(m); });
+const maxVal=Math.max(...munis.map(m=>m.value));
+munis.forEach(m=> m.score=Math.round(m.value/maxVal*100));
+
+const playLabel={bank:"Bank",persuade:"Persuade",hold:"Hold"};
+const playColor={bank:"var(--bank)",persuade:"var(--persuade)",hold:"var(--hold)"};
+
+/* ---------- countdown ---------- */
+(function(){
+  const primary=new Date("2026-06-23T00:00:00-04:00");
+  const now=new Date();
+  const d=Math.max(0,Math.ceil((primary-now)/(1000*60*60*24)));
+  document.getElementById("countdown").textContent=d+" days to primary";
+  document.getElementById("days").value=Math.min(21,Math.max(1,d));
+})();
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("nav button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    document.getElementById(b.dataset.tab).classList.add("active");
+  };
+});
+
+/* ---------- county chart ---------- */
+(function(){
+  const el=document.getElementById("countyChart");
+  counties.forEach(c=>{
+    const row=document.createElement("div"); row.className="countyrow";
+    row.innerHTML=`<div class="cname">${c.name}</div>
+      <div class="ctrack">
+        <div class="cfill" style="width:${c.dem}%;background:var(--bank)">${c.dem}% D</div>
+      </div>
+      <div class="cshare">${c.weight}% wt</div>`;
+    el.appendChild(row);
+  });
+})();
+
+/* ---------- priority board ---------- */
+let sortKey="score", sortDir=-1;
+function renderBoard(){
+  const tb=document.querySelector("#boardTbl tbody"); tb.innerHTML="";
+  const rows=[...munis].sort((a,b)=>{
+    let av=a[sortKey], bv=b[sortKey];
+    if(sortKey==="name"){av=a.name;bv=b.name;return sortDir*av.localeCompare(bv);}
+    if(sortKey==="play"){av=a.play;bv=b.play;return sortDir*av.localeCompare(bv);}
+    return sortDir*(av-bv);
+  });
+  rows.forEach(m=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td><div class="muni">${m.name}${m.home?'<span class="home">HOME BASE</span>':''}</div><div class="cty">${m.cty}</div></td>
+      <td><span class="badge ${m.play}">${playLabel[m.play]}</span></td>
+      <td class="num">${m.prize.toLocaleString()}</td>
+      <td class="num">${Math.round(m.lean*100)}%</td>
+      <td class="num"><div class="scorebar"><div class="scoretrack"><div class="scorefill" style="width:${m.score}%;background:${playColor[m.play]}"></div></div><span>${m.score}</span></div></td>`;
+    tb.appendChild(tr);
+  });
+}
+document.querySelectorAll("#boardTbl th").forEach(th=>{
+  th.onclick=()=>{
+    const k=th.dataset.k;
+    if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=(k==="name"||k==="play")?1:-1;}
+    document.querySelectorAll("#boardTbl th").forEach(x=>x.textContent=x.textContent.replace(/ [▾▴]$/,''));
+    th.textContent+= sortDir<0?" ▾":" ▴";
+    renderBoard();
+  };
+});
+renderBoard();
+
+/* ---------- allocator ---------- */
+const els={shifts:"shiftsV",reach:"reachV",days:"daysV",mix:"mixV"};
+function fmtMix(v){ return v<35?"base-heavy":v>65?"battleground-heavy":"balanced"; }
+function allocate(){
+  const shifts=+document.getElementById("shifts").value;
+  const reach=+document.getElementById("reach").value;
+  const days=+document.getElementById("days").value;
+  const mix=+document.getElementById("mix").value;
+  document.getElementById("shiftsV").textContent=shifts;
+  document.getElementById("reachV").textContent=reach;
+  document.getElementById("daysV").textContent=days;
+  document.getElementById("mixV").textContent=fmtMix(mix);
+
+  // weighting: tilt value by strategy mix (base vs battleground)
+  const baseW=(100-mix)/50, battleW=mix/50;
+  const weighted=munis.map(m=>{
+    let w=m.value;
+    if(m.play==="bank") w*=baseW;
+    else if(m.play==="persuade") w*=battleW;
+    else w*=0.5;
+    return {m,w};
+  });
+  const totW=weighted.reduce((s,x)=>s+x.w,0);
+  const totalContacts=shifts*reach;
+
+  // distribute shifts proportional to weight, cap at saturating the prize once
+  let rows=weighted.map(x=>{
+    let share=x.w/totW;
+    let sh=share*shifts;
+    let contacts=sh*reach;
+    contacts=Math.min(contacts, x.m.prize*0.9); // can't contact more than ~90% of expected voters
+    // projected net Davidson votes
+    let coef;
+    if(x.m.play==="bank") coef=0.072*x.m.lean;        // GOTV lift on favorable base
+    else if(x.m.play==="persuade") coef=0.045;        // net persuasion shift
+    else coef=0.012;
+    let votes=contacts*coef;
+    return {name:x.m.name,cty:x.m.cty,play:x.m.play,shifts:sh,contacts,votes};
+  }).filter(r=>r.shifts>=0.5)
+    .sort((a,b)=>b.votes-a.votes);
+
+  const netVotes=Math.round(rows.reduce((s,r)=>s+r.votes,0));
+  const ctyVotes={};
+  rows.forEach(r=>ctyVotes[r.cty]=(ctyVotes[r.cty]||0)+r.votes);
+  const topCty=Object.entries(ctyVotes).sort((a,b)=>b[1]-a[1])[0]?.[0]||"—";
+
+  document.getElementById("netVotes").textContent="+"+netVotes.toLocaleString();
+  document.getElementById("contacts").textContent=Math.round(rows.reduce((s,r)=>s+r.contacts,0)).toLocaleString();
+  document.getElementById("shiftsDay").textContent=(shifts/days).toFixed(1);
+  document.getElementById("topCty").textContent=topCty;
+  document.getElementById("ctxNote").innerHTML=
+    `This plan models <b>+${netVotes.toLocaleString()}</b> net Davidson votes against a modeled ~36,000-vote primary electorate. A five-way race is decided by a few points of that — so a few hundred well-targeted votes can move the order of finish, and only the winner faces Lawler.`;
+
+  const tb=document.querySelector("#allocTbl tbody"); tb.innerHTML="";
+  rows.slice(0,12).forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><div class="muni">${r.name}</div><div class="cty">${r.cty}</div></td>
+      <td><span class="badge ${r.play}">${playLabel[r.play]}</span></td>
+      <td class="num">${Math.round(r.shifts)}</td>
+      <td class="num">${Math.round(r.contacts).toLocaleString()}</td>
+      <td class="num" style="color:var(--good);font-weight:600">+${Math.round(r.votes).toLocaleString()}</td>`;
+    tb.appendChild(tr);
+  });
+}
+["shifts","reach","days","mix"].forEach(id=>document.getElementById(id).addEventListener("input",allocate));
+allocate();
+</script>
+</body>
+</html>
